@@ -1,0 +1,48 @@
+#+title:     Runner
+#+author:    Logan Barnett-Hoy
+#+email:     logustus@gmail.com
+#+date:      <2021-02-19 Fri>
+#+language:  en
+#+file_tags:
+#+tags:
+
+Runner is a command line micro-TUI for running programs and executing other
+simple tasks.
+
+* why
+
+Life on =macOS= is nice with tools like Alfred, Quicksilver, and the built in
+Stoplight itself. They all make some pretty aggressive assumptions about
+symlinks, or aren't extensible enough to be a good general purpose tool.
+Treating symlinks as their target paths runs counter to the purpose of symlinks.
+The decisions made in these tools probably assists with performance. However it
+is detrimental to using tools such as =nix=.
+
+* design
+
+** actions
+
+Actions represent things to do when a completion becomes completed.
+
+** Candidate
+
+A =Candidate= is one of potentially many selections available based on a partial
+input. With an input such as =em=, a candidate list could be =Emacs.app= and
+=Email.app= because they both start with =em=.
+
+[[Candidate Providers]] produce Candidates.
+** Candidate Providers
+
+Candidate Providers generate lists of candidates to present to the user. The
+list should be narrowed by the input especially, and possibly the position of
+the cursor.
+
+For the initial attempt, =CandidateProviders= will be synchronous, blocking
+computations. In the future they should allow results to stream in.
+
+* sustained
+
+=runner= can be used to kick off a single application, or it can run in a
+"sustained" mode. In =sustained= mode, =runner= doesn't close upon invoking an
+action. Instead it may produce some visual output and then await the next action
+to invoke.

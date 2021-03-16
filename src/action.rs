@@ -1,0 +1,4 @@
+
+trait ActionProvider {
+    fn action()
+}

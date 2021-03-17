@@ -7,12 +7,12 @@ use tuikit::error::TuikitError;
 
 fn completions_filter<E>(
     completions: Vec<String>,
-    line: String,
+    input: String,
 ) -> Result<Vec<String>, E> {
     Ok(completions
         .iter()
         .map(|x| String::from(x.clone()))
-        .filter(|x| x.starts_with(&line))
+        .filter(|x| x.starts_with(&input))
         .collect::<Vec<String>>())
 }
 
@@ -80,7 +80,7 @@ enum Input<E> {
 // TODO: Change from String to enum of Line or ...Control? Something to allow us
 // to break out. This logic used to be in the match loop so a break made sense,
 // but no longer since it is in its own function now.
-fn inputPoll(
+fn input_poll(
     term: &Term<()>,
     line: String,
     ev: &Event,
@@ -101,14 +101,20 @@ fn inputPoll(
                         None => Input::ModifyLine("".to_string()),
                     }
                 },
+                Event::Key(Key::Ctrl('a')) => Input::ModifyCursor,
                 Event::Key(Key::Char(ch)) => {
                     let mod_line = line + &ch.to_string();
-                    term.print(
+                    match term.print(
                         0,
                         0,
-                        format!("Type application name, ESC to quit: {}", mod_line).as_str(),
-                    );
-                    Input::ModifyLine(mod_line)
+                        format!(
+                            "Type application name, ESC to quit: {}",
+                            mod_line,
+                        ).as_str(),
+                    ) {
+                        Ok(_) => Input::ModifyLine(mod_line),
+                        Err(e) => Input::Err(e),
+                    }
                 },
                 _ => Input::ModifyLine(line),
             }
@@ -117,30 +123,55 @@ fn inputPoll(
     }
 }
 
+fn command_invoke(c: String) -> () {
+
+}
+
 enum Loop<E> {
     Err(E),
     Quit,
     Repeat,
 }
 
-fn main() {
+fn main() -> Result<(), TuikitError> {
     Term::with_height(TermHeight::Percent(30)).and_then(|term: Term<()>| {
         term.present().and_then(|_| {
             let mut line = String::new();
             loop {
-                match term.poll_event() {
-                    Ok(ev) => {
-                        match inputPoll(&term, line, &ev) {
-                            Input::ModifyLine(mod_line) => {
-                                line = mod_line.clone();
-                                completions_print_all(&term, mod_line)
-                            },
-                            // TODO: Handle loop conditions.
-                            Input::Quit => break Ok(()),
-                        };
+                match term.poll_event().and_then(|ev| {
+                    match input_poll(&term, line.clone(), &ev) {
+                        Input::Err(e) => Ok(Loop::Err(e)),
+                        Input::ModifyCursor => Ok(Loop::Repeat),
+                        Input::ModifyLine(mod_line) => {
+                            line = mod_line.clone();
+                            match completions_print_all(&term, mod_line) {
+                                Ok(_) => Ok(Loop::Repeat),
+                                Err(e) => Ok(Loop::Err(e)),
+                            }
+                        },
+                        Input::Quit => Ok(Loop::Quit),
+                        Input::Submit(c) => {
+                            command_invoke(c);
+                            Ok(Loop::Repeat)
+                        },
                     }
+                }) {
+                    Ok(x) => {
+                        match x {
+                            Loop::Err(e) => break Err(e),
+                            Loop::Quit => break Ok(()),
+                            Loop::Repeat => (),
+                        }
+                    },
+                    Err(e) => break Err(e),
                 }
             }
         })
-    });
+    })
+    // This is redundant - main can accept a result.
+    // match term_result {
+    //     Ok(_) => std::process::exit(0),
+    //     // TODO: Show error.
+    //     Err(_) => std::process::exit(1),
+    // }
 }

@@ -4,8 +4,11 @@ use tuikit::prelude::Term;
 use tuikit::prelude::TermHeight;
 
 mod input;
-use input::Input;
+use input::InputEvent;
 use input::input_poll;
+
+mod cursor;
+use cursor::Cursor;
 
 fn completions_filter<E>(
     completions: Vec<String>,
@@ -25,6 +28,7 @@ fn completions_get<E>(_input: String) -> Result<Vec<String>, ()> {
 fn completions_print_all(
     term: &Term<()>,
     line: String,
+    cursor: Cursor,
 ) -> Result<(), TuikitError> {
     // Compiler demands we clone here, else we try to use "moved" value for
     // completions_filter. Value is immutable. Why an error?
@@ -37,7 +41,9 @@ fn completions_print_all(
                     term.print(
                         total,
                         0,
-                        "Press RET or C-j to run the highlighted appliction",
+                        format!(
+                            "Press RET or C-j to run the highlighted appliction \{ x: {}, y: {} }",
+                        )
                     )
                     // Per https://github.com/lotabout/tuikit/issues/28
                     // set_cursor must be called prior to present to
@@ -85,20 +91,26 @@ fn main() -> Result<(), TuikitError> {
     Term::with_height(TermHeight::Percent(30)).and_then(|term: Term<()>| {
         term.present().and_then(|_| {
             let mut line = String::new();
+            let mut cursor = Cursor { x: 0, y: 0 };
             loop {
                 match term.poll_event().and_then(|ev| {
-                    match input_poll(&term, line.clone(), &ev) {
-                        Input::Err(e) => Ok(Loop::Err(e)),
-                        Input::ModifyCursor => Ok(Loop::Repeat),
-                        Input::ModifyLine(mod_line) => {
+                    match input_poll(&term, cursor, line.clone(), &ev) {
+                        InputEvent::Err(e) => Ok(Loop::Err(e)),
+                        // InputEvent::Modify(_, _) => Ok(Loop::Repeat),
+                        InputEvent::Modify(mod_line, mod_cursor) => {
                             line = mod_line.clone();
-                            match completions_print_all(&term, mod_line) {
+                            cursor = mod_cursor;
+                            match completions_print_all(
+                                &term,
+                                mod_line,
+                                mod_cursor,
+                            ) {
                                 Ok(_) => Ok(Loop::Repeat),
                                 Err(e) => Ok(Loop::Err(e)),
                             }
                         },
-                        Input::Quit => Ok(Loop::Quit),
-                        Input::Submit(c) => {
+                        InputEvent::Quit => Ok(Loop::Quit),
+                        InputEvent::Submit(c) => {
                             command_invoke(c);
                             Ok(Loop::Repeat)
                         },

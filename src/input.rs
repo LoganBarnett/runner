@@ -6,44 +6,48 @@ use tuikit::prelude::Event;
 use tuikit::prelude::Key;
 use tuikit::prelude::Term;
 
-pub struct Cursor {
-    x: i32,
-    y: i32,
-}
+use super::cursor::Cursor;
 
-pub enum Input<E> {
+pub enum InputEvent<E> {
     Err(E),
-    ModifyLine(String),
-    ModifyCursor,
-    // Modify(String, Cursor),
+    Modify(String, Cursor),
     Quit,
     Submit(String),
 }
 
 pub fn input_poll(
     term: &Term<()>,
+    cursor: Cursor,
     line: String,
     ev: &Event,
-) -> Input<TuikitError> {
+) -> InputEvent<TuikitError> {
     let chain = term.clear().and_then(|_| {
-        term.print(0, 0, "Type application name, ESC to quit: ")
+        let prompt =  "Type application name, ESC to quit: ";
+        // Instead of using cursor.y here, it is used to highlight candidates.
+        term.print(cursor.x + prompt.len(), 0, prompt)
     })
         ;
     match chain {
         Ok(_) => {
             match ev {
-                Event::Key(Key::ESC) => Input::Quit,
-                Event::Key(Key::Ctrl('c')) => Input::Quit,
-                Event::Key(Key::Enter) => Input::Submit(line),
+                Event::Key(Key::ESC) => InputEvent::Quit,
+                Event::Key(Key::Ctrl('c')) => InputEvent::Quit,
+                Event::Key(Key::Enter) => InputEvent::Submit(line),
                 Event::Key(Key::Backspace) => {
-                    match line.get(0..(line.len() - 1)) {
-                        Some(l) => Input::ModifyLine(l.to_string()),
-                        None => Input::ModifyLine("".to_string()),
-                    }
+                    InputEvent::Modify(
+                        line.chars().take(cursor.x).skip(1).collect(),
+                        cursor.back(),
+                    )
                 },
-                Event::Key(Key::Ctrl('a')) => Input::ModifyCursor,
+                Event::Key(Key::Ctrl('a')) => {
+                    InputEvent::Modify(line, cursor.home())
+                },
                 Event::Key(Key::Char(ch)) => {
-                    let mod_line = line + &ch.to_string();
+                    let begin: String = line.chars().take(cursor.x).collect();
+                    let end: String = line.chars().skip(cursor.x).collect();
+                    // This seems like a very expensive concat (or extend, in
+                    // Rust parlance), but I had trouble with extend.
+                    let mod_line = format!("{}{}{}", begin, ch, end);
                     match term.print(
                         0,
                         0,
@@ -52,13 +56,18 @@ pub fn input_poll(
                             mod_line,
                         ).as_str(),
                     ) {
-                        Ok(_) => Input::ModifyLine(mod_line),
-                        Err(e) => Input::Err(e),
+                        Ok(_) => {
+                            InputEvent::Modify(
+                                mod_line.clone(),
+                                cursor.forward(mod_line),
+                            )
+                        },
+                        Err(e) => InputEvent::Err(e),
                     }
                 },
-                _ => Input::ModifyLine(line),
+                _ => InputEvent::Modify(line, cursor),
             }
         },
-        Err(e) => Input::Err(e),
+        Err(e) => InputEvent::Err(e),
     }
 }

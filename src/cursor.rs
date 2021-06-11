@@ -6,7 +6,12 @@ pub struct Cursor {
 }
 
 impl std::fmt::Display for Cursor {
-
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        write!(f, "{{x: {}, y: {}}}", self.x, self.y)
+    }
 }
 
 impl Cursor {

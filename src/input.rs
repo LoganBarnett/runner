@@ -1,49 +1,57 @@
 /*******************************************************************************
  * Manage input here.
  ******************************************************************************/
-use tuikit::error::TuikitError;
 use tuikit::prelude::Event;
 use tuikit::prelude::Key;
 use tuikit::prelude::Term;
 
+use super::display;
+use super::error;
 use super::cursor::Cursor;
-
-#[derive(Debug)]
-pub enum InputError {
-    TerminalPrintError(TuikitError),
-}
 
 pub enum InputEvent {
     Modify(String, Cursor),
+    Noop,
     Quit,
     Submit(String),
 }
 
-pub fn input_poll(
-    term: &Term<()>,
-    cursor: Cursor,
-    line: String,
-    ev: &Event,
-) -> Result<InputEvent, InputError> {
-    term.clear()
-        .and_then(|_| {
-            let prompt =  "Type application name, ESC to quit: ";
-            // Instead of using cursor.y here, it is used to highlight candidates.
-            term.print(cursor.x + prompt.len(), 0, prompt)
-        })
-        .map_err(InputError::TerminalPrintError)?;
+pub fn input_poll<'a>(
+    term: &'a Term<()>,
+    cursor: &'a Cursor,
+    line: &'a String,
+    ev: &'a Event,
+) -> Result<InputEvent, error::AppError> {
+    let _  = display::prompt_display(&term, &line, &cursor)
+        .map(|_|
+             term
+             .present()
+             .map_err(error::AppError::TerminalPrintError)
+        )
+        ?;
     match ev {
         Event::Key(Key::ESC) => Ok(InputEvent::Quit),
         Event::Key(Key::Ctrl('c')) => Ok(InputEvent::Quit),
-        Event::Key(Key::Enter) => Ok(InputEvent::Submit(line)),
+        Event::Key(Key::Enter) => Ok(InputEvent::Submit(line.to_string())),
         Event::Key(Key::Backspace) => {
             Ok(InputEvent::Modify(
-                line.chars().take(cursor.x).skip(1).collect(),
+                if cursor.x == 0 {
+                    line.to_string()
+                } else {
+                    format!(
+                        "{}{}",
+                        line.chars().take(cursor.x - 1).collect::<String>(),
+                        line.chars().skip(cursor.x).collect::<String>(),
+                    )
+                },
                 cursor.back(),
             ))
         },
         Event::Key(Key::Ctrl('a')) => {
-            Ok(InputEvent::Modify(line, cursor.home()))
+            Ok(InputEvent::Modify(line.to_string(), cursor.home()))
+        },
+        Event::Restarted => {
+            Ok(InputEvent::Noop)
         },
         Event::Key(Key::Char(ch)) => {
             let begin: String = line.chars().take(cursor.x).collect();
@@ -51,20 +59,9 @@ pub fn input_poll(
             // This seems like a very expensive concat (or extend, in
             // Rust parlance), but I had trouble with extend.
             let mod_line = format!("{}{}{}", begin, ch, end);
-            term.print(
-                0,
-                0,
-                format!(
-                    "Type application name, ESC to quit: {}",
-                    mod_line,
-                ).as_str(),
-            )
-                .map(|_| InputEvent::Modify(
-                    mod_line.clone(),
-                    cursor.forward(mod_line),
-                ))
-                .map_err(InputError::TerminalPrintError)
+            Ok(InputEvent::Modify(mod_line.clone(), cursor.forward(&mod_line)))
         },
-        _ => Ok(InputEvent::Modify(line, cursor)),
+        x => Err(error::AppError::InputUnknownError(x.clone())),
+
     }
 }

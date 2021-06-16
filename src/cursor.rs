@@ -15,8 +15,8 @@ impl std::fmt::Display for Cursor {
 }
 
 impl Cursor {
-    fn line(self, text: String) -> String {
-        match text.split('\n').nth(self.y + 1) {
+    fn line(self, text: &String) -> String {
+        match text.split('\n').nth(self.y) {
             Some(line) => line.to_string(),
             None => "".to_string(),
         }
@@ -26,9 +26,9 @@ impl Cursor {
         Cursor { x: 0, y: self.y }
     }
 
-    pub fn end(self, text: String) -> Cursor {
+    pub fn end(self, text: &String) -> Cursor {
         Cursor {
-            x: self.line(text).chars().count(),
+            x: self.line(&text).chars().count(),
             y: self.y,
         }
     }
@@ -40,8 +40,9 @@ impl Cursor {
         }
     }
 
-    pub fn forward(self, text: String) -> Cursor {
-        let len = self.line(text).chars().count();
+    pub fn forward<'a>(self, text: &'a String) -> Cursor {
+        // Is chars used for unicode purposes? len() seems to work fine.
+        let len = self.line(&text).len(); // .chars().count();
         Cursor {
             x: if self.x < len { self.x + 1 } else { len },
             y: self.y,

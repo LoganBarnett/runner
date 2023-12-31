@@ -1,8 +1,8 @@
 use std::result::Result;
-use tuikit::error::TuikitError;
 use tuikit::prelude::Term;
 use tuikit::prelude::TermHeight;
 
+mod completions;
 mod cursor;
 use cursor::Cursor;
 mod display;
@@ -10,90 +10,6 @@ mod error;
 mod input;
 use input::InputEvent;
 use input::input_poll;
-
-pub const COMPLETIONS_DISPLAY_MAX: usize = 3;
-
-// Leave this as a Result - right now it's hard coded but we want error handling
-// here.
-fn completions_filter<'a, E>(
-    completions: &'a Vec<String>,
-    input: &'a String,
-) -> Result<Vec<String>, E> {
-    Ok(completions
-        .iter()
-        .map(|x| String::from(x.clone()))
-        .filter(|x| x.starts_with(&input.as_str()))
-        .collect::<Vec<String>>())
-}
-
-// Leave this as a Result - right now it's hard coded but we want error handling
-// here.
-fn completions_get<'a, E>(_input: &'a String) -> Result<Vec<String>, ()> {
-    Ok(vec!["foo".to_string(), "bar".into(), "baz".into()])
-}
-
-fn completions_print_all<'a>(
-    term: &'a Term<()>,
-    line: &'a String,
-    cursor: &'a Cursor,
-) -> Result<(), error::AppError> {
-    match completions_get::<TuikitError>(&line) {
-        Ok(cs) => {
-            completions_filter(&cs, &line)
-                .and_then(|cs| completions_print(&term, &cs))
-                .and_then(|_| {
-                    display::instructions_display(&term, &cursor, cs.len() + 1)
-                })
-                  .and_then(|_| {
-                      term.present()
-                        .map_err(error::AppError::TerminalPrintError)
-                  })
-        },
-        Err(e) => {
-            println!("Error getting completions: {:?}", e);
-            // Execution should continue even if we
-            // can't get completions.
-            Ok(())
-        }
-    }
-}
-
-fn completions_print<'a>(
-    term: &'a Term<()>,
-    cs: &'a Vec<String>,
-) -> Result<usize, error::AppError> {
-    let (_, r) = cs
-        .into_iter()
-        .fold(
-            (0, Ok(usize::MIN)),
-            |(i, r), x| (i+1, r.and_then(|_| term.print(i+1, 0, x.as_str()))),
-        );
-    completions_clear_unused_lines(&term, &cs)?;
-    r.map_err(error::AppError::TerminalPrintError)
-}
-
-fn completions_clear_unused_lines<'a>(
-    term: &'a Term,
-    cs: &'a Vec<String>,
-) -> Result<(), error::AppError> {
-    let (_, width) = term.term_size()
-        .map_err(error::AppError::TerminalPrintError)
-        ?;
-    // If we just print the new input value and that value was shorter than the
-    // last time, it will remain in place, creating a kind of ghost text. We
-    // must clear the entire line.
-    let lines_printed = cs.len();
-    for i in 0..(COMPLETIONS_DISPLAY_MAX - lines_printed) {
-        term.print(
-            i+1 + lines_printed,
-            0,
-            &display::pad_right('*', width),
-        )
-            .map_err(error::AppError::TerminalPrintError)
-            ?;
-    }
-    Ok(())
-}
 
 fn command_invoke(_c: String) -> () {
 
@@ -113,14 +29,12 @@ fn input_loop(term: &Term<()>) -> Result<(), error::AppError> {
             .map_err(error::AppError::TerminalEventError)
             .and_then(|ev| {
                 match input_poll(&term, &cursor, &line, &ev)? {
-                    // InputEvent::Err(e) => Ok(Loop::Err(e)),
-                    // InputEvent::Modify(_, _) => Ok(Loop::Repeat),
                     InputEvent::Noop => Ok(Loop::Repeat),
                     InputEvent::Modify(mod_line, mod_cursor) => {
                         line = mod_line;
                         cursor = mod_cursor.clone();
                         display::prompt_display(&term, &line, &cursor)?;
-                        let result = completions_print_all(
+                        let result = completions::completions_print_all(
                             &term,
                             &line,
                             &cursor,
